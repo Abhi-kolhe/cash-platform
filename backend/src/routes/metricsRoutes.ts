@@ -1,5 +1,7 @@
 import { Router } from "express";
 import client from "prom-client";
+import { requireAuth } from "../middleware/auth.js";
+import { requireRole } from "../middleware/requireRole.js";
 
 const router = Router();
 
@@ -20,9 +22,15 @@ export const httpRequestDurationSeconds = new client.Histogram({
 });
 client.register.registerMetric(httpRequestDurationSeconds);
 
-router.get("/", async (_req, res) => {
-  res.set("Content-Type", client.register.contentType);
-  res.end(await client.register.metrics());
-});
+// 🔐 ADMIN ONLY METRICS
+router.get(
+  "/",
+  requireAuth,
+  requireRole(["admin"]),
+  async (_req, res) => {
+    res.set("Content-Type", client.register.contentType);
+    res.end(await client.register.metrics());
+  }
+);
 
 export default router;
