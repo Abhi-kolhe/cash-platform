@@ -14,6 +14,12 @@ enum TransactionType {
   TRANSFER
 }
 
+enum UserRole {
+  user
+  agent
+  admin
+}
+
 model User {
   refreshTokens RefreshToken[]
   id           String   @id @default(uuid())
@@ -22,9 +28,11 @@ model User {
   passwordHash String
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
-
+  
+  role UserRole @default(user) 
   accounts   Account[]
   categories Category[]
+    agentProfile AgentProfile?
 }
 
 model Account {
@@ -40,6 +48,21 @@ model Account {
   transactions Transaction[]
 
   @@index([userId])
+}
+
+model AgentProfile {
+  id          String   @id @default(uuid())
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String   @unique
+  isVerified  Boolean  @default(false)
+  isBanned    Boolean  @default(false)
+  available   Boolean  @default(false)
+  cashLimit   Decimal  @db.Decimal(14, 2)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  locationName String?
+  latitude     Float?
+  longitude    Float?
 }
 
 model Category {
@@ -86,4 +109,19 @@ model RefreshToken {
   expiresAt  DateTime
   revokedAt  DateTime?
   createdAt  DateTime @default(now())
+}
+
+model AgentTransaction {
+  id          String   @id @default(uuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  status      String   // "pending" | "confirmed" | "cancelled"
+  amount      Int
+
+  userId      String   // requester (customer)
+  agentId     String   // agentProfile.id
+
+  otp         String   // for confirmation
+  completedAt DateTime?
 }

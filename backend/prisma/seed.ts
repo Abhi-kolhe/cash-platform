@@ -11,11 +11,12 @@ async function main() {
 
   const user = await prisma.user.upsert({
     where: { email: DEMO_EMAIL },
-    update: { passwordHash, name: DEMO_NAME },
+    update: { passwordHash, name: DEMO_NAME, role: "user" },
     create: {
       email: DEMO_EMAIL,
       name: DEMO_NAME,
       passwordHash,
+      role: "user",
     },
   });
 
@@ -66,6 +67,21 @@ async function main() {
       },
     ],
   });
+  // --- Seed admin user ---
+const adminEmail = "admin@example.com";
+const adminPassword = "admin123";
+const adminPasswordHash = await bcrypt.hash(adminPassword, 10);
+
+await prisma.user.upsert({
+  where: { email: adminEmail },
+  update: { passwordHash: adminPasswordHash, name: "Admin User", role: "admin" },
+  create: {
+    email: adminEmail,
+    name: "Admin User",
+    passwordHash: adminPasswordHash,
+    role: "admin",
+  },
+});
 
   console.log("Seeded user/account/transactions:", {
     user: { id: user.id, email: user.email },

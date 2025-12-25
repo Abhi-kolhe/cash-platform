@@ -8,6 +8,7 @@ import YAML from "yaml";
 import pinoHttp from "pino-http";
 import { auditLogger } from "./middleware/auditLogger.js";
 import { randomUUID } from "crypto";
+import adminAgentRoutes from "./routes/adminAgentRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import sessionRoutes from "./routes/session.js";
 import healthRoutes from "./routes/healthRoutes.js";
@@ -17,6 +18,12 @@ import categoryRoutes from "./routes/categoryRoutes.js";
 import metricsRoutes, { httpRequestCounter, httpRequestDurationSeconds } from "./routes/metricsRoutes.js";
 import docsRoutes from "./routes/docsRoutes.js";
 import versionRoutes from "./routes/versionRoutes.js";
+import agentSelfRoutes from "./routes/agentSelfRoutes.js";
+import agentPublicRoutes from "./routes/agentPublicRoutes.js";
+import agentRegisterRoutes from "./routes/agentRegisterRoutes.js";
+import mapsProxyRoutes from "./routes/mapsProxyRoutes.js";
+import cashTransactionRoutes from "./routes/cashTransactionRoutes.js";
+import { requireAuth } from './middleware/auth.js'
 import { errorHandler } from "./middleware/errorHandler.js";
 import { notFound } from "./middleware/notFound.js";
 import { authRateLimit } from "./middleware/authRateLimit.js";
@@ -70,11 +77,16 @@ app.use((req, res, next) => {
   });
   next();
 });
-
+app.use("/admin", adminAgentRoutes);
 app.use("/", healthRoutes);
 app.use("/version", versionRoutes);
+app.use("/agent", requireAuth, agentSelfRoutes);
+app.use("/agents", agentPublicRoutes);
+app.use("/transactions", cashTransactionRoutes);
+app.use("/maps", mapsProxyRoutes);
 app.use("/auth", authRateLimit, authRoutes);
 app.use("/accounts", dataRateLimit, accountRoutes);
+app.use("/", agentRegisterRoutes);
 app.use("/transactions", dataRateLimit, transactionRoutes);
 app.use("/categories", dataRateLimit, categoryRoutes);
 app.use("/metrics", metricsRoutes);

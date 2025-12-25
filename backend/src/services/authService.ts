@@ -22,7 +22,7 @@ export async function signup(data: SignupInput) {
       },
     });
 
-    const token = jwt.sign({ sub: user.id, email: user.email }, JWT_SECRET, { expiresIn: "12h" });
+    const token = jwt.sign({ sub: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: "12h" });
     return { token, user: { id: user.id, name: user.name, email: user.email } };
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
@@ -40,6 +40,6 @@ export async function login(data: LoginInput) {
   const ok = await bcrypt.compare(data.password, user.passwordHash);
   if (!ok) throw new Error("Invalid credentials");
 
-  const token = jwt.sign({ sub: user.id, email: user.email }, JWT_SECRET, { expiresIn: "12h" });
+  const token = jwt.sign({ sub: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: "12h" });
   return { token, user: { id: user.id, name: user.name, email: user.email } };
 }
