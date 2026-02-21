@@ -10,6 +10,12 @@ function requireEnv(name: string): string {
   return value;
 }
 
+// Use a comma-separated list from .env for allowed origins, or an empty array as default
+export const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter((origin) => origin);
+
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: Number(process.env.PORT ?? "4000"),

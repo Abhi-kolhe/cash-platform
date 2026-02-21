@@ -2,7 +2,6 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import bodyParser from "body-parser";
-import dotenv from "dotenv";
 import { env, allowedOrigins } from "./config/env.js";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcrypt";
@@ -12,6 +11,8 @@ import YAML from "yaml";
 import pinoHttp from "pino-http";
 import { auditLogger } from "./middleware/auditLogger.js";
 import { randomUUID } from "crypto";
+
+// Route imports
 import adminAgentRoutes from "./routes/adminAgentRoutes.js";
 import agentTransactionRoutes from "./routes/agentTransactionRoutes.js";
 import authRegisterRoutes from "./routes/authRegisterRoutes.js";
@@ -31,6 +32,9 @@ import agentPublicRoutes from "./routes/agentPublicRoutes.js";
 import agentRegisterRoutes from "./routes/agentRegisterRoutes.js";
 import mapsProxyRoutes from "./routes/mapsProxyRoutes.js";
 import cashTransactionRoutes from "./routes/cashTransactionRoutes.js";
+import authRoutes from "./routes/authRoutes.js";
+
+// Middleware
 import { requireAuth } from "./middleware/auth.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { notFound } from "./middleware/notFound.js";
@@ -38,12 +42,11 @@ import { authRateLimit } from "./middleware/authRateLimit.js";
 import { dataRateLimit } from "./middleware/rateLimits.js";
 import logger from "./lib/logger.js";
 
-dotenv.config();
-
 const prisma = new PrismaClient();
 const app = express();
+
 const corsOrigins =
-  env.NODE_ENV === "development" || allowedOrigins.length === 0
+  env.nodeEnv === "development" || allowedOrigins.length === 0
     ? true
     : allowedOrigins;
 
@@ -74,6 +77,7 @@ app.use(
 
 app.use(auditLogger);
 
+// Prometheus metrics middleware
 app.use((req, res, next) => {
   const start = process.hrtime.bigint();
   res.on("finish", () => {
@@ -95,6 +99,7 @@ app.use((req, res, next) => {
   next();
 });
 
+// Health endpoint using Prisma
 app.get("/health", async (_req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
@@ -104,6 +109,7 @@ app.get("/health", async (_req, res) => {
   }
 });
 
+// Signup endpoint
 app.post("/auth/signup", async (req, res) => {
   const { name, email, password } = req.body ?? {};
   if (!name || !email || !password) {
@@ -124,6 +130,7 @@ app.post("/auth/signup", async (req, res) => {
   return res.status(201).json({ user });
 });
 
+// Login endpoint
 app.post("/auth/login", async (req, res) => {
   const { email, password } = req.body ?? {};
   if (!email || !password) {
@@ -152,6 +159,7 @@ app.post("/auth/login", async (req, res) => {
   });
 });
 
+// Mount all routers/middleware
 app.use("/admin", adminAgentRoutes);
 app.use("/", authRegisterRoutes);
 app.use("/", healthRoutes);
@@ -164,10 +172,12 @@ app.use("/auth", authRateLimit, sessionRoutes);
 app.use("/accounts", dataRateLimit, accountRoutes);
 app.use("/", agentRegisterRoutes);
 app.use("/agent/transactions", requireAuth, agentTransactionRoutes);
-import authRoutes from "./routes/authRoutes.js";
 app.use("/transactions", dataRateLimit, transactionRoutes);
 app.use("/categories", dataRateLimit, categoryRoutes);
 app.use("/metrics", metricsRoutes);
+app.use("/docs", docsRoutes);
+
+// OpenAPI JSON endpoint
 app.get("/docs/openapi.json", (req, res, next) => {
   try {
     const yamlPath = new URL("../docs/openapi.yaml", import.meta.url);
@@ -179,8 +189,7 @@ app.get("/docs/openapi.json", (req, res, next) => {
   }
 });
 
-app.use("/docs", docsRoutes);
-
+// 404 and error handlers
 app.use(notFound);
 app.use(errorHandler);
 
