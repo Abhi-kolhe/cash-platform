@@ -1,8 +1,12 @@
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
+import bodyParser from "body-parser";
 import dotenv from "dotenv";
 import { env, allowedOrigins } from "./config/env.js";
+import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
 import { readFileSync } from "fs";
 import YAML from "yaml";
 import pinoHttp from "pino-http";
@@ -16,7 +20,10 @@ import healthRoutes from "./routes/healthRoutes.js";
 import accountRoutes from "./routes/accountRoutes.js";
 import transactionRoutes from "./routes/transactionRoutes.js";
 import categoryRoutes from "./routes/categoryRoutes.js";
-import metricsRoutes, { httpRequestCounter, httpRequestDurationSeconds } from "./routes/metricsRoutes.js";
+import metricsRoutes, {
+  httpRequestCounter,
+  httpRequestDurationSeconds,
+} from "./routes/metricsRoutes.js";
 import docsRoutes from "./routes/docsRoutes.js";
 import versionRoutes from "./routes/versionRoutes.js";
 import agentSelfRoutes from "./routes/agentSelfRoutes.js";
@@ -24,21 +31,25 @@ import agentPublicRoutes from "./routes/agentPublicRoutes.js";
 import agentRegisterRoutes from "./routes/agentRegisterRoutes.js";
 import mapsProxyRoutes from "./routes/mapsProxyRoutes.js";
 import cashTransactionRoutes from "./routes/cashTransactionRoutes.js";
-import { requireAuth } from './middleware/auth.js'
+import { requireAuth } from "./middleware/auth.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { notFound } from "./middleware/notFound.js";
 import { authRateLimit } from "./middleware/authRateLimit.js";
 import { dataRateLimit } from "./middleware/rateLimits.js";
 import logger from "./lib/logger.js";
 
-
 dotenv.config();
 
+const prisma = new PrismaClient();
 const app = express();
-const corsOrigins = env.NODE_ENV === "development" || allowedOrigins.length === 0 ? true : allowedOrigins;
+const corsOrigins =
+  env.NODE_ENV === "development" || allowedOrigins.length === 0
+    ? true
+    : allowedOrigins;
+
 app.use(helmet());
 app.use(cors({ origin: corsOrigins, credentials: true }));
-app.use(express.json());
+app.use(bodyParser.json());
 
 app.use(
   pinoHttp({
@@ -66,18 +77,81 @@ app.use(auditLogger);
 app.use((req, res, next) => {
   const start = process.hrtime.bigint();
   res.on("finish", () => {
-    const rawRoute = req.route?.path || req.originalUrl?.split("?")[0] || "unknown";
+    const rawRoute =
+      req.route?.path || req.originalUrl?.split("?")[0] || "unknown";
     const routeLabel = rawRoute.replace(
       /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/g,
       ":id"
     );
-    const labels = { method: req.method, route: routeLabel, status_code: res.statusCode };
+    const labels = {
+      method: req.method,
+      route: routeLabel,
+      status_code: res.statusCode,
+    };
     httpRequestCounter.inc(labels);
     const durationSeconds = Number(process.hrtime.bigint() - start) / 1e9;
     httpRequestDurationSeconds.observe(labels, durationSeconds);
   });
   next();
 });
+
+app.get("/health", async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    return res.json({ ok: true, db: "up" });
+  } catch {
+    return res.status(500).json({ ok: false, db: "down" });
+  }
+});
+
+app.post("/auth/signup", async (req, res) => {
+  const { name, email, password } = req.body ?? {};
+  if (!name || !email || !password) {
+    return res.status(400).json({ error: "name, email, password required" });
+  }
+
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) {
+    return res.status(409).json({ error: "User already exists" });
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  const user = await prisma.user.create({
+    data: { name, email, passwordHash },
+    select: { id: true, name: true, email: true, createdAt: true },
+  });
+
+  return res.status(201).json({ user });
+});
+
+app.post("/auth/login", async (req, res) => {
+  const { email, password } = req.body ?? {};
+  if (!email || !password) {
+    return res.status(400).json({ error: "email and password required" });
+  }
+
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) {
+    return res.status(401).json({ error: "Invalid credentials" });
+  }
+
+  const ok = await bcrypt.compare(password, user.passwordHash);
+  if (!ok) {
+    return res.status(401).json({ error: "Invalid credentials" });
+  }
+
+  const accessToken = jwt.sign(
+    { sub: user.id, email: user.email },
+    env.jwtSecret,
+    { expiresIn: "15m" }
+  );
+
+  return res.json({
+    accessToken,
+    user: { id: user.id, name: user.name, email: user.email },
+  });
+});
+
 app.use("/admin", adminAgentRoutes);
 app.use("/", authRegisterRoutes);
 app.use("/", healthRoutes);
@@ -86,7 +160,7 @@ app.use("/agent", requireAuth, agentSelfRoutes);
 app.use("/agents", agentPublicRoutes);
 app.use("/transactions", cashTransactionRoutes);
 app.use("/maps", mapsProxyRoutes);
-app.use("/auth", authRateLimit, authRoutes);
+app.use("/auth", authRateLimit, sessionRoutes);
 app.use("/accounts", dataRateLimit, accountRoutes);
 app.use("/", agentRegisterRoutes);
 app.use("/agent/transactions", requireAuth, agentTransactionRoutes);
@@ -106,9 +180,8 @@ app.get("/docs/openapi.json", (req, res, next) => {
 });
 
 app.use("/docs", docsRoutes);
-app.use("/auth", sessionRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
 
-export { app };
+export { app, prisma };
